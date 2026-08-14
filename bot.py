@@ -1,4 +1,6 @@
 import os
+import threading
+from flask import Flask
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
@@ -11,9 +13,20 @@ DEPOSIT_ADDRESS = "67ZMMrmdR7S2shWpLmfrHZd2dF68JZZyNGDWjfHWcQSV"
 # Conversation state
 WAITING_FOR_WALLET = 1
 
-# In-memory storage (per user)
+# In-memory storage
 user_wallets = {}
 user_stakes = {}
+
+# ─── Flask App (keeps Render happy) ───────────────────────
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "🤖 Staking Bot is running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host="0.0.0.0", port=port)
 
 
 # ─── /start ───────────────────────────────────────────────
@@ -93,7 +106,6 @@ async def receive_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     wallet_address = update.message.text.strip()
 
-    # Basic validation — adjust length rules per your chain
     if len(wallet_address) < 20:
         await update.message.reply_text(
             "❌ That doesn't look like a valid wallet address. Please try again."
@@ -127,6 +139,12 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── Main ─────────────────────────────────────────────────
 def main():
+    # Start Flask in a background thread
+    thread = threading.Thread(target=run_flask)
+    thread.daemon = True
+    thread.start()
+
+    # Start Telegram bot
     app = (
         Application.builder()
         .token(TOKEN)
@@ -136,7 +154,6 @@ def main():
         .build()
     )
 
-    # Conversation handler for wallet connection
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(button_handler)],
         states={
